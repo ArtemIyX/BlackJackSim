@@ -1,19 +1,9 @@
-using System;
 using BlackJackData.Enums;
 
 namespace BlackJackData.Structs;
 
-public struct CardDef : IEquatable<CardDef>
+public readonly record struct CardDef(CardSuit Suit, CardRank Rank)
 {
-    public CardSuit Suit;
-    public CardRank Rank;
-
-    public CardDef(CardSuit suit, CardRank rank)
-    {
-        Suit = suit;
-        Rank = rank;
-    }
-
     public readonly byte ToPackedByte()
     {
         return (byte)(((int)Suit << 4) | ((int)Rank - 2));
@@ -42,16 +32,6 @@ public struct CardDef : IEquatable<CardDef>
         return FromPackedByte(packed);
     }
 
-    public static bool operator ==(CardDef left, CardDef right)
-    {
-        return left.Suit == right.Suit && left.Rank == right.Rank;
-    }
-
-    public static bool operator !=(CardDef left, CardDef right)
-    {
-        return !(left == right);
-    }
-
     public static bool operator ==(CardDef left, byte right)
     {
         return left.ToPackedByte() == right;
@@ -70,20 +50,5 @@ public struct CardDef : IEquatable<CardDef>
     public static bool operator !=(byte left, CardDef right)
     {
         return !(left == right);
-    }
-
-    public bool Equals(CardDef other)
-    {
-        return this == other;
-    }
-
-    public override bool Equals(object? obj)
-    {
-        return obj is CardDef other && Equals(other);
-    }
-
-    public override int GetHashCode()
-    {
-        return HashCode.Combine(Suit, Rank);
     }
 }

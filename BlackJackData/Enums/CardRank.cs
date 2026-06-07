@@ -1,6 +1,6 @@
 namespace BlackJackData.Enums;
 
-public enum CardRank
+public enum CardRank : byte
 {
     Two = 2,
     Three = 3,

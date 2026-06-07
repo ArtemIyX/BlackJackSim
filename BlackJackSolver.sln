@@ -4,6 +4,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlackJackConsole", "BlackJa
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlackJackData", "BlackJackData\BlackJackData.csproj", "{10EB06CC-743A-4380-9E60-15070C61E276}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlackJackEngine", "BlackJackEngine\BlackJackEngine.csproj", "{17B19F35-B1CF-49FD-85B6-6AA0E1414960}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -18,5 +20,9 @@ Global
 		{10EB06CC-743A-4380-9E60-15070C61E276}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{10EB06CC-743A-4380-9E60-15070C61E276}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{10EB06CC-743A-4380-9E60-15070C61E276}.Release|Any CPU.Build.0 = Release|Any CPU
+		{17B19F35-B1CF-49FD-85B6-6AA0E1414960}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{17B19F35-B1CF-49FD-85B6-6AA0E1414960}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{17B19F35-B1CF-49FD-85B6-6AA0E1414960}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{17B19F35-B1CF-49FD-85B6-6AA0E1414960}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

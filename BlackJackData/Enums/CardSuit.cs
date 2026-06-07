@@ -1,6 +1,6 @@
 ﻿namespace BlackJackData.Enums;
 
-public enum CardSuit
+public enum CardSuit : byte
 {
     Diamonds,
     Clubs,
