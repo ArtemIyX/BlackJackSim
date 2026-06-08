@@ -239,3 +239,5 @@ That means the repo already supports:
 The repository includes an automated test suite covering engine flow, simulation behavior, counting systems, optimizer behavior, and strategy logic.
 
 ## License
+
+The project is licensed under [MIT](LICENSE)
