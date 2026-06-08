@@ -38,7 +38,7 @@ Console.WriteLine();
 Console.WriteLine("Running simulation...");
 Console.WriteLine();
 
-var strategy = new FixedBetFallbackStrategy(strategyWager);
+var strategy = new BasicStrategyBot(strategyWager);
 var result = runner.Run(strategy, config);
 
 WriteSummary(result);
