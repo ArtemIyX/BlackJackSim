@@ -12,7 +12,7 @@ public class BasicStrategyTableGeneratorTests
     {
         var tables = BasicStrategyTableGenerator.Generate(BlackjackRules.Default);
 
-        tables.GetHardAction(16, 10).Should().Be(PlayerActionType.Hit);
+        tables.GetHardAction(16, 10).Should().Be(PlayerActionType.Surrender);
         tables.GetHardAction(12, 4).Should().Be(PlayerActionType.Stand);
         tables.GetSoftAction(18, 6).Should().Be(PlayerActionType.Double);
         tables.GetSoftAction(18, 9).Should().Be(PlayerActionType.Hit);

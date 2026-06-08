@@ -46,16 +46,6 @@ public sealed class BasicStrategyBot : IBlackjackStrategy
                            ?? throw new InvalidOperationException("Dealer up card is not available.");
         var dealerValue = GetDealerValue(dealerUpCard.Rank);
 
-        if (ShouldSurrender(activeHand, dealerValue, context))
-        {
-            return PlayerActionType.Surrender;
-        }
-
-        if (ShouldSplit(activeHand, dealerValue, context))
-        {
-            return PlayerActionType.Split;
-        }
-
         var tableAction = TryGetTableAction(activeHand, dealerValue);
         if (tableAction.HasValue)
         {
@@ -89,43 +79,6 @@ public sealed class BasicStrategyBot : IBlackjackStrategy
     {
     }
 
-    private static bool ShouldSurrender(HandState hand, int dealerValue, StrategyActionContext context)
-    {
-        if (!context.LegalActions.Contains(PlayerActionType.Surrender))
-        {
-            return false;
-        }
-
-        if (hand.Value.IsSoft || hand.Cards.Count != 2)
-        {
-            return false;
-        }
-
-        return hand.Value.BestTotal switch
-        {
-            16 when dealerValue is 9 or 10 or 11 => true,
-            15 when dealerValue == 10 => true,
-            _ => false
-        };
-    }
-
-    private bool ShouldSplit(HandState hand, int dealerValue, StrategyActionContext context)
-    {
-        if (!context.LegalActions.Contains(PlayerActionType.Split) || hand.Cards.Count != 2)
-        {
-            return false;
-        }
-
-        var rank = hand.Cards[0].Rank;
-        if (rank != hand.Cards[1].Rank)
-        {
-            return false;
-        }
-
-        var pairValue = GetDealerValue(rank);
-        return _tables.GetPairAction(pairValue, dealerValue) == PlayerActionType.Split;
-    }
-
     private static PlayerActionType ResolveLegalAction(PlayerActionType tableAction, IReadOnlyList<PlayerActionType> legalActions)
     {
         if (legalActions.Contains(tableAction))
@@ -147,6 +100,19 @@ public sealed class BasicStrategyBot : IBlackjackStrategy
         }
 
         if (tableAction == PlayerActionType.Split)
+        {
+            if (legalActions.Contains(PlayerActionType.Hit))
+            {
+                return PlayerActionType.Hit;
+            }
+
+            if (legalActions.Contains(PlayerActionType.Stand))
+            {
+                return PlayerActionType.Stand;
+            }
+        }
+
+        if (tableAction == PlayerActionType.Surrender)
         {
             if (legalActions.Contains(PlayerActionType.Hit))
             {
