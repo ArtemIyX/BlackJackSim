@@ -62,6 +62,29 @@ public class CountingStrategyBotTests
         bot.GetCurrentCountSnapshot(1d).RunningCount.Should().Be(0d);
     }
 
+    [Fact]
+    public void GetWager_ShouldReturnZero_WhenBackCountingEntryUnitsAreNotMet()
+    {
+        var bot = new CountingStrategyBot(
+            new HiLoCountingSystem(),
+            new FlatBetRamp(),
+            new BasicStrategyBot(10m),
+            unitSize: 10m,
+            minimumBetUnitsToPlay: 2m);
+
+        var wager = bot.GetWager(new StrategyWagerContext(
+            1,
+            500m,
+            10m,
+            BlackJackData.Rules.BlackjackRules.Default,
+            104,
+            312,
+            78,
+            false));
+
+        wager.Should().Be(0m);
+    }
+
     private static StrategyRoundResultContext CreateRoundContext(CardDef[] playerCards, CardDef[] dealerCards)
     {
         var handResult = new HandResult(
@@ -84,7 +107,7 @@ public class CountingStrategyBotTests
             110m,
             10m,
             roundResult,
-            new SimulationRoundRecord(1, 100m, 10m, 10m, 110m, false, 100, Array.Empty<SimulationHandRecord>()));
+            new SimulationRoundRecord(1, 100m, 10m, 10m, 110m, true, false, 100, Array.Empty<SimulationHandRecord>()));
     }
 
     private static CardDef C(CardRank rank)

@@ -6,6 +6,7 @@ public sealed record SimulationRoundRecord(
     decimal Wager,
     decimal NetPayout,
     decimal EndingBankroll,
+    bool Participated,
     bool UsedFreshShoe,
     int CardsRemainingAfterRound,
     IReadOnlyList<SimulationHandRecord> Hands);

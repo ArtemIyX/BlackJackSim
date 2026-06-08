@@ -8,9 +8,11 @@ public sealed record BetRampOptimizationConfig(
     decimal StartingBankroll,
     decimal MinimumWager,
     decimal UnitSize,
+    string CountingSystemName,
     IReadOnlyList<double> Thresholds,
     IReadOnlyList<decimal> AllowedUnits,
     decimal FallbackUnits = 1m,
     int TopResultsToKeep = 10,
     int? RandomSeed = null,
+    int? MaxDegreeOfParallelism = null,
     bool StopOnBankruptcy = true);

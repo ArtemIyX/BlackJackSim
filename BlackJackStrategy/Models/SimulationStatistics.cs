@@ -2,6 +2,7 @@ namespace BlackJackStrategy.Models;
 
 public sealed record SimulationStatistics(
     int RoundsPlayed,
+    int RoundsSatOut,
     int HandsPlayed,
     decimal StartingBankroll,
     decimal EndingBankroll,
@@ -21,6 +22,8 @@ public sealed record SimulationStatistics(
     int SplitHands,
     int InsuranceHands)
 {
+    public decimal ParticipationRate => RoundsPlayed == 0 ? 0m : (decimal)(RoundsPlayed - RoundsSatOut) / RoundsPlayed;
+
     public decimal ReturnOnInvestment => TotalWagered == 0m ? 0m : TotalNetPayout / TotalWagered;
 
     public decimal AverageNetPerRound => RoundsPlayed == 0 ? 0m : TotalNetPayout / RoundsPlayed;

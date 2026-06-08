@@ -1,4 +1,5 @@
 using BlackJackData.Rules;
+using BlackJackStrategy.Counting;
 using BlackJackStrategy.Models;
 using BlackJackStrategy.Optimization;
 
@@ -10,6 +11,7 @@ var startingBankroll = ReadDecimal("Starting bankroll", 1000m, min: 1m);
 var minimumWager = ReadDecimal("Minimum wager", 10m, min: 0.01m, max: startingBankroll);
 var unitSize = ReadDecimal("Unit size", minimumWager, min: minimumWager, max: startingBankroll);
 var topResults = ReadInt("Top results to show", 10, min: 1);
+var countingSystemName = ReadChoice("Counting system", CardCountingSystems.Names, "Hi-Lo");
 var deckCount = ReadInt("Deck count", BlackjackRules.Default.DeckCount, min: 1);
 var penetrationPercent = ReadDouble("Penetration percent", BlackjackRules.Default.ShoePenetration * 100d, minExclusive: 0d, maxExclusive: 100d);
 var thresholds = ReadDoubleList("True-count thresholds", "1,2,3");
@@ -28,6 +30,7 @@ var config = new BetRampOptimizationConfig(
     StartingBankroll: startingBankroll,
     MinimumWager: minimumWager,
     UnitSize: unitSize,
+    CountingSystemName: countingSystemName,
     Thresholds: thresholds,
     AllowedUnits: allowedUnits,
     TopResultsToKeep: topResults,
@@ -41,6 +44,7 @@ var optimizer = new TrueCountBetRampOptimizer();
 var result = optimizer.Optimize(config);
 
 Console.WriteLine($"Candidates evaluated: {result.CandidatesEvaluated}");
+Console.WriteLine($"Counting system:      {result.Config.CountingSystemName}");
 Console.WriteLine(new string('-', 80));
 
 for (var index = 0; index < result.TopResults.Count; index++)
@@ -77,6 +81,38 @@ static int ReadInt(string label, int defaultValue, int min)
         }
 
         Console.WriteLine($"Please enter an integer >= {min}.");
+    }
+}
+
+static string ReadChoice(string label, IReadOnlyList<string> choices, string defaultValue)
+{
+    while (true)
+    {
+        Console.WriteLine($"{label}:");
+        for (var i = 0; i < choices.Count; i++)
+        {
+            Console.WriteLine($"  {i + 1}. {choices[i]}{(choices[i].Equals(defaultValue, StringComparison.OrdinalIgnoreCase) ? " (default)" : string.Empty)}");
+        }
+
+        Console.Write($"Choose [default: {defaultValue}]: ");
+        var input = Console.ReadLine()?.Trim();
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return defaultValue;
+        }
+
+        if (int.TryParse(input, out var index) && index >= 1 && index <= choices.Count)
+        {
+            return choices[index - 1];
+        }
+
+        var match = choices.FirstOrDefault(choice => choice.Equals(input, StringComparison.OrdinalIgnoreCase));
+        if (match is not null)
+        {
+            return match;
+        }
+
+        Console.WriteLine("Please enter a valid choice number or exact name.");
     }
 }
 

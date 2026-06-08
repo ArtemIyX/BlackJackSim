@@ -1,9 +1,10 @@
 using BlackJackStrategy.Betting;
 using BlackJackStrategy.Contracts;
-using BlackJackStrategy.Counting.Systems;
+using BlackJackStrategy.Counting;
 using BlackJackStrategy.Models;
 using BlackJackStrategy.Simulation;
 using BlackJackStrategy.Strategies;
+using System.Collections.Concurrent;
 
 namespace BlackJackStrategy.Optimization;
 
@@ -22,29 +23,38 @@ public sealed class TrueCountBetRampOptimizer : IBetRampOptimizer
         ValidateConfig(config);
 
         var candidates = GenerateCandidates(config).ToArray();
-        var results = new List<BetRampEvaluationResult>(candidates.Length);
+        var results = new ConcurrentBag<BetRampEvaluationResult>();
 
-        foreach (var candidate in candidates)
+        var parallelOptions = new ParallelOptions();
+        if (config.MaxDegreeOfParallelism.HasValue)
         {
-            var strategy = new CountingStrategyBot(
-                new HiLoCountingSystem(),
-                new TrueCountStepBetRamp(candidate.Steps, candidate.FallbackUnits),
-                new BasicStrategyBot(config.MinimumWager, config.Rules),
-                config.UnitSize);
-
-            var simulationResult = _runner.Run(
-                strategy,
-                new SimulationConfig(
-                    RoundsToPlay: config.RoundsPerCandidate,
-                    StartingBankroll: config.StartingBankroll,
-                    Rules: config.Rules,
-                    MinimumWager: config.MinimumWager,
-                    CaptureRoundRecords: false,
-                    RandomSeed: config.RandomSeed,
-                    StopOnBankruptcy: config.StopOnBankruptcy));
-
-            results.Add(new BetRampEvaluationResult(candidate, simulationResult));
+            parallelOptions.MaxDegreeOfParallelism = config.MaxDegreeOfParallelism.Value;
         }
+
+        Parallel.ForEach(
+            candidates.Select((candidate, index) => (candidate, index)),
+            parallelOptions,
+            item =>
+            {
+                var strategy = new CountingStrategyBot(
+                    CardCountingSystems.Create(config.CountingSystemName),
+                    new TrueCountStepBetRamp(item.candidate.Steps, item.candidate.FallbackUnits),
+                    new BasicStrategyBot(config.MinimumWager, config.Rules),
+                    config.UnitSize);
+
+                var simulationResult = _runner.Run(
+                    strategy,
+                    new SimulationConfig(
+                        RoundsToPlay: config.RoundsPerCandidate,
+                        StartingBankroll: config.StartingBankroll,
+                        Rules: config.Rules,
+                        MinimumWager: config.MinimumWager,
+                        CaptureRoundRecords: false,
+                        RandomSeed: DeriveSeed(config.RandomSeed, item.index),
+                        StopOnBankruptcy: config.StopOnBankruptcy));
+
+                results.Add(new BetRampEvaluationResult(item.candidate, simulationResult));
+            });
 
         var topResults = results
             .OrderByDescending(result => result.Score)
@@ -54,6 +64,19 @@ public sealed class TrueCountBetRampOptimizer : IBetRampOptimizer
             .ToArray();
 
         return new BetRampOptimizationResult(config, candidates.Length, topResults);
+    }
+
+    private static int? DeriveSeed(int? baseSeed, int candidateIndex)
+    {
+        if (!baseSeed.HasValue)
+        {
+            return null;
+        }
+
+        unchecked
+        {
+            return baseSeed.Value + (candidateIndex * 9973);
+        }
     }
 
     private static IEnumerable<BetRampCandidate> GenerateCandidates(BetRampOptimizationConfig config)
@@ -129,6 +152,13 @@ public sealed class TrueCountBetRampOptimizer : IBetRampOptimizer
             throw new ArgumentException("At least one threshold is required.", nameof(config));
         }
 
+        if (string.IsNullOrWhiteSpace(config.CountingSystemName))
+        {
+            throw new ArgumentException("A counting system name is required.", nameof(config));
+        }
+
+        _ = CardCountingSystems.Create(config.CountingSystemName);
+
         if (config.AllowedUnits.Count == 0)
         {
             throw new ArgumentException("At least one allowed unit value is required.", nameof(config));
@@ -137,6 +167,11 @@ public sealed class TrueCountBetRampOptimizer : IBetRampOptimizer
         if (config.TopResultsToKeep <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(config), config.TopResultsToKeep, "Top results count must be positive.");
+        }
+
+        if (config.MaxDegreeOfParallelism is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(config), config.MaxDegreeOfParallelism, "Max degree of parallelism must be positive when specified.");
         }
     }
 }

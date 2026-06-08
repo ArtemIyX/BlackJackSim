@@ -1,10 +1,10 @@
+using BlackJackData.Enums;
 using BlackJackData.Rules;
 using BlackJackStrategy.Betting;
 using BlackJackStrategy.Counting.Systems;
 using BlackJackStrategy.Models;
 using BlackJackStrategy.Simulation;
 using BlackJackStrategy.Strategies;
-
 
 
 Console.WriteLine("Blackjack Strategy Runner");
@@ -15,14 +15,17 @@ var startingBankroll = ReadDecimal("Starting bankroll", 1_000_000m, min: 1m);
 var minimumWager = ReadDecimal("Minimum wager", 10m, min: 0.01m, max: startingBankroll);
 var strategyWager = ReadDecimal("Strategy wager", minimumWager, min: minimumWager, max: startingBankroll);
 var deckCount = ReadInt("Deck count", BlackjackRules.Default.DeckCount, min: 1);
-var penetrationPercent = ReadDouble("Penetration percent", BlackjackRules.Default.ShoePenetration * 100d, minExclusive: 0d, maxExclusive: 100d);
+var penetrationPercent = ReadDouble("Penetration percent", BlackjackRules.Default.ShoePenetration * 100d,
+    minExclusive: 0d, maxExclusive: 100d);
+var backCounting = ReadYesNo("Back counting", defaultValue: false);
 var captureRoundLog = ReadYesNo("Capture per-round log", defaultValue: false);
 var seed = ReadOptionalInt("Random seed (blank for random)");
 
 var rules = BlackjackRules.Default with
 {
     DeckCount = deckCount,
-    ShoePenetration = penetrationPercent / 100d
+    ShoePenetration = penetrationPercent / 100d,
+    SurrenderRule = SurrenderRule.None
 };
 
 var config = new SimulationConfig(
@@ -30,6 +33,8 @@ var config = new SimulationConfig(
     StartingBankroll: startingBankroll,
     Rules: rules,
     MinimumWager: minimumWager,
+    BackgroundPlayerCount: backCounting ? 5 : 0,
+    BackgroundPlayerWager: minimumWager,
     CaptureRoundRecords: captureRoundLog,
     RandomSeed: seed);
 
@@ -43,15 +48,20 @@ Console.WriteLine();
 var playStrategy = new BasicStrategyBot(strategyWager, rules);
 
 var countingStrategy = new CountingStrategyBot(
-    new HiLoCountingSystem(),
+    new WongHalvesCountingSystem(),
     new TrueCountStepBetRamp(
-    [
-        new BetRampStep(1d, 2m),
-        new BetRampStep(2d, 8m),
-        new BetRampStep(3d, 8m)
-    ]),
+        [
+            new BetRampStep(0.5d, 1m),
+            new BetRampStep(1.0d, 1m),
+            new BetRampStep(1.5d, 2m),
+            new BetRampStep(2.0d, 2m),
+            new BetRampStep(2.5d, 6m),
+            new BetRampStep(3.0d, 6m)
+        ],
+        fallbackUnits: 1m),
     playStrategy,
-    unitSize: strategyWager);
+    unitSize: strategyWager,
+    minimumBetUnitsToPlay: backCounting ? 2m : 1m);
 var result = runner.Run(countingStrategy, config);
 
 WriteSummary(result);
@@ -65,7 +75,7 @@ if (captureRoundLog && result.RoundRecords.Count > 0)
     foreach (var round in result.RoundRecords.Take(10))
     {
         Console.WriteLine(
-            $"Round {round.RoundNumber}: wager {round.Wager:0.##}, net {round.NetPayout:+0.##;-0.##;0}, bankroll {round.EndingBankroll:0.##}, fresh shoe: {YesNo(round.UsedFreshShoe)}");
+            $"Round {round.RoundNumber}: participated {YesNo(round.Participated)}, wager {round.Wager:0.##}, net {round.NetPayout:+0.##;-0.##;0}, bankroll {round.EndingBankroll:0.##}, fresh shoe: {YesNo(round.UsedFreshShoe)}");
     }
 
     if (result.RoundRecords.Count > 10)
@@ -91,6 +101,8 @@ static void WriteSummary(SimulationResult result)
     Console.WriteLine($"ROI:                 {stats.ReturnOnInvestment:P2}");
     Console.WriteLine($"Avg / round:         {stats.AverageNetPerRound:+0.####;-0.####;0}");
     Console.WriteLine($"Avg / hand:          {stats.AverageNetPerHand:+0.####;-0.####;0}");
+    Console.WriteLine($"Rounds sat out:      {stats.RoundsSatOut}");
+    Console.WriteLine($"Participation rate:  {stats.ParticipationRate:P2}");
     Console.WriteLine($"Max bankroll:        {stats.MaxBankroll:0.##}");
     Console.WriteLine($"Min bankroll:        {stats.MinBankroll:0.##}");
     Console.WriteLine($"Max drawdown:        {stats.MaxDrawdown:0.##}");

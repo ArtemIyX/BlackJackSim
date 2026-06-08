@@ -14,20 +14,30 @@ public sealed class CountingStrategyBot : IBlackjackStrategy
         ICardCountingSystem countingSystem,
         IBetRamp betRamp,
         IBlackjackStrategy playStrategy,
-        decimal unitSize)
+        decimal unitSize,
+        decimal minimumBetUnitsToPlay = 1m)
     {
         if (unitSize <= 0m)
         {
             throw new ArgumentOutOfRangeException(nameof(unitSize), unitSize, "Unit size must be positive.");
         }
 
+        if (minimumBetUnitsToPlay <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(minimumBetUnitsToPlay), minimumBetUnitsToPlay,
+                "Minimum bet units to play must be positive.");
+        }
+
         _countingSystem = countingSystem ?? throw new ArgumentNullException(nameof(countingSystem));
         _betRamp = betRamp ?? throw new ArgumentNullException(nameof(betRamp));
         _playStrategy = playStrategy ?? throw new ArgumentNullException(nameof(playStrategy));
         UnitSize = unitSize;
+        MinimumBetUnitsToPlay = minimumBetUnitsToPlay;
     }
 
     public decimal UnitSize { get; }
+
+    public decimal MinimumBetUnitsToPlay { get; }
 
     public decimal GetWager(StrategyWagerContext context)
     {
@@ -41,7 +51,10 @@ public sealed class CountingStrategyBot : IBlackjackStrategy
             UnitSize,
             snapshot);
 
-        return _betRamp.GetWager(rampContext);
+        var wager = _betRamp.GetWager(rampContext);
+        var units = UnitSize == 0m ? 0m : wager / UnitSize;
+
+        return units < MinimumBetUnitsToPlay ? 0m : wager;
     }
 
     public PlayerActionType GetAction(StrategyActionContext context)

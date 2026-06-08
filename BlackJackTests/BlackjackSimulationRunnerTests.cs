@@ -118,6 +118,30 @@ public class BlackjackSimulationRunnerTests
             .WithMessage("*illegal action*");
     }
 
+    [Fact]
+    public void Run_ShouldAllowSittingOut_WhenBackgroundPlayersAreConfigured()
+    {
+        var runner = new BlackjackSimulationRunner();
+        var config = new SimulationConfig(
+            RoundsToPlay: 5,
+            StartingBankroll: 100m,
+            Rules: BlackjackRules.Default with { AllowInsurance = false },
+            MinimumWager: 5m,
+            BackgroundPlayerCount: 5,
+            BackgroundPlayerWager: 5m,
+            CaptureRoundRecords: true,
+            RandomSeed: 123);
+
+        var result = runner.Run(new AlwaysSitOutStrategy(), config);
+
+        result.Statistics.RoundsPlayed.Should().Be(5);
+        result.Statistics.RoundsSatOut.Should().Be(5);
+        result.Statistics.HandsPlayed.Should().Be(0);
+        result.Statistics.TotalWagered.Should().Be(0m);
+        result.RoundRecords.Should().HaveCount(5);
+        result.RoundRecords.Should().OnlyContain(record => !record.Participated && record.Hands.Count == 0);
+    }
+
     private sealed class RecordingStrategy : IBlackjackStrategy
     {
         public int ResetCallCount { get; private set; }
@@ -187,6 +211,24 @@ public class BlackjackSimulationRunnerTests
         public decimal GetWager(StrategyWagerContext context) => 5m;
 
         public PlayerActionType GetAction(StrategyActionContext context) => PlayerActionType.Split;
+
+        public void OnRoundCompleted(StrategyRoundResultContext context)
+        {
+        }
+
+        public void Reset()
+        {
+        }
+    }
+
+    private sealed class AlwaysSitOutStrategy : IBlackjackStrategy
+    {
+        public decimal GetWager(StrategyWagerContext context) => 0m;
+
+        public PlayerActionType GetAction(StrategyActionContext context)
+        {
+            throw new InvalidOperationException("Sit-out strategy should not receive player actions.");
+        }
 
         public void OnRoundCompleted(StrategyRoundResultContext context)
         {

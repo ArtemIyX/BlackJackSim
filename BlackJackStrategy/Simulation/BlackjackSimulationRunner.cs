@@ -8,6 +8,7 @@ using BlackJackEngine.Shoe;
 using BlackJackStrategy.Contracts;
 using BlackJackStrategy.Models;
 using BlackJackStrategy.Strategies;
+using BlackJackData.ValueObjects;
 
 namespace BlackJackStrategy.Simulation;
 
@@ -42,8 +43,16 @@ public sealed class BlackjackSimulationRunner
         var records = config.CaptureRoundRecords ? new List<SimulationRoundRecord>() : null;
         var handRecords = new List<SimulationHandRecord>();
         var roundsPlayed = 0;
+        var roundsSatOut = 0;
         var totalWagered = 0m;
         var totalNetPayout = 0m;
+        var mainSeatId = new SeatId(1);
+        var backgroundStrategies = CreateBackgroundStrategies(config);
+
+        foreach (var backgroundStrategy in backgroundStrategies)
+        {
+            backgroundStrategy.Reset();
+        }
 
         var winHands = 0;
         var loseHands = 0;
@@ -84,26 +93,33 @@ public sealed class BlackjackSimulationRunner
             var wager = strategy.GetWager(wagerContext);
             if (wager <= 0m)
             {
-                break;
+                if (config.BackgroundPlayerCount == 0)
+                {
+                    break;
+                }
+
+                roundsSatOut++;
             }
 
-            if (wager < config.MinimumWager || wager > bankroll)
+            if (wager > 0m && (wager < config.MinimumWager || wager > bankroll))
             {
                 throw new InvalidOperationException($"Strategy returned invalid wager '{wager}'.");
             }
 
             var bankrollBeforeRound = bankroll;
+            var seatBets = CreateSeatBets(config, mainSeatId, bankroll, wager);
             var state = _roundEngine.StartRound(
                 new RoundStartOptions(
-                    new BlackJackData.ValueObjects.RoundId(roundNumber),
+                    new RoundId(roundNumber),
                     config.Rules,
-                    [new SeatBet(new BlackJackData.ValueObjects.SeatId(1), wager, bankroll)]),
+                    seatBets),
                 shoe);
 
             while (state.Phase is GamePhase.InsuranceDecision or GamePhase.PlayerTurn)
             {
                 var legalActions = _roundEngine.GetLegalActions(state);
-                var actionType = strategy.GetAction(new StrategyActionContext(roundNumber, bankroll, state, legalActions));
+                var activeStrategy = ResolveSeatStrategy(strategy, backgroundStrategies, state.ActiveSeatId, mainSeatId);
+                var actionType = activeStrategy.GetAction(new StrategyActionContext(roundNumber, bankroll, state, legalActions));
                 if (!legalActions.Contains(actionType))
                 {
                     throw new InvalidOperationException($"Strategy returned illegal action '{actionType}'.");
@@ -121,62 +137,68 @@ public sealed class BlackjackSimulationRunner
             }
 
             var roundResult = _roundEngine.ResolveRound(state);
-            var seatResult = roundResult.Seats.Single();
-            bankroll += seatResult.NetPayout;
+            var seatResult = roundResult.Seats.FirstOrDefault(seat => seat.SeatId == mainSeatId);
+            var mainHands = state.Seats.FirstOrDefault(seat => seat.Id == mainSeatId)?.Hands ?? Array.Empty<BlackJackData.States.HandState>();
+            var netPayout = seatResult?.NetPayout ?? 0m;
+
+            bankroll += netPayout;
             totalWagered += wager;
-            totalNetPayout += seatResult.NetPayout;
+            totalNetPayout += netPayout;
             roundsPlayed++;
 
-            foreach (var hand in state.Seats.Single().Hands.Zip(seatResult.Hands))
+            if (seatResult is not null)
             {
-                var roundHandRecord = new SimulationHandRecord(
-                    hand.Second.Outcome,
-                    hand.Second.Wager,
-                    hand.Second.NetPayout,
-                    hand.First.IsSplitHand,
-                    hand.Second.UsedInsurance,
-                    hand.First.IsDoubledDown,
-                    hand.First.IsBust);
-
-                handRecords.Add(roundHandRecord);
-
-                switch (hand.Second.Outcome)
+                foreach (var hand in mainHands.Zip(seatResult.Hands))
                 {
-                    case HandOutcomeType.Win:
-                        winHands++;
-                        break;
-                    case HandOutcomeType.Lose:
-                        loseHands++;
-                        break;
-                    case HandOutcomeType.Push:
-                        pushHands++;
-                        break;
-                    case HandOutcomeType.Blackjack:
-                        blackjackHands++;
-                        break;
-                    case HandOutcomeType.Surrender:
-                        surrenderHands++;
-                        break;
-                }
+                    var roundHandRecord = new SimulationHandRecord(
+                        hand.Second.Outcome,
+                        hand.Second.Wager,
+                        hand.Second.NetPayout,
+                        hand.First.IsSplitHand,
+                        hand.Second.UsedInsurance,
+                        hand.First.IsDoubledDown,
+                        hand.First.IsBust);
 
-                if (hand.First.IsBust)
-                {
-                    bustHands++;
-                }
+                    handRecords.Add(roundHandRecord);
 
-                if (hand.First.IsDoubledDown)
-                {
-                    doubledHands++;
-                }
+                    switch (hand.Second.Outcome)
+                    {
+                        case HandOutcomeType.Win:
+                            winHands++;
+                            break;
+                        case HandOutcomeType.Lose:
+                            loseHands++;
+                            break;
+                        case HandOutcomeType.Push:
+                            pushHands++;
+                            break;
+                        case HandOutcomeType.Blackjack:
+                            blackjackHands++;
+                            break;
+                        case HandOutcomeType.Surrender:
+                            surrenderHands++;
+                            break;
+                    }
 
-                if (hand.First.IsSplitHand)
-                {
-                    splitHands++;
-                }
+                    if (hand.First.IsBust)
+                    {
+                        bustHands++;
+                    }
 
-                if (hand.Second.UsedInsurance)
-                {
-                    insuranceHands++;
+                    if (hand.First.IsDoubledDown)
+                    {
+                        doubledHands++;
+                    }
+
+                    if (hand.First.IsSplitHand)
+                    {
+                        splitHands++;
+                    }
+
+                    if (hand.Second.UsedInsurance)
+                    {
+                        insuranceHands++;
+                    }
                 }
             }
 
@@ -184,11 +206,14 @@ public sealed class BlackjackSimulationRunner
                 roundNumber,
                 bankrollBeforeRound,
                 wager,
-                seatResult.NetPayout,
+                netPayout,
                 bankroll,
+                seatResult is not null,
                 shoe.LastRoundUsedFreshShoe,
                 shoe.CardsRemaining,
-                config.CaptureRoundRecords ? handRecords.TakeLast(seatResult.Hands.Count).ToArray() : Array.Empty<SimulationHandRecord>());
+                config.CaptureRoundRecords && seatResult is not null
+                    ? handRecords.TakeLast(seatResult.Hands.Count).ToArray()
+                    : Array.Empty<SimulationHandRecord>());
 
             if (records is not null)
             {
@@ -202,6 +227,17 @@ public sealed class BlackjackSimulationRunner
                 wager,
                 roundResult,
                 roundRecord));
+
+            foreach (var backgroundStrategy in backgroundStrategies)
+            {
+                backgroundStrategy.OnRoundCompleted(new StrategyRoundResultContext(
+                    roundNumber,
+                    bankrollBeforeRound,
+                    bankroll,
+                    wager,
+                    roundResult,
+                    roundRecord));
+            }
 
             if (bankroll > maxBankroll)
             {
@@ -232,6 +268,7 @@ public sealed class BlackjackSimulationRunner
 
         var statistics = new SimulationStatistics(
             roundsPlayed,
+            roundsSatOut,
             handRecords.Count,
             config.StartingBankroll,
             bankroll,
@@ -276,5 +313,69 @@ public sealed class BlackjackSimulationRunner
         {
             throw new ArgumentOutOfRangeException(nameof(config), config.MinimumWager, "Minimum wager must be positive.");
         }
+
+        if (config.BackgroundPlayerCount < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(config), config.BackgroundPlayerCount,
+                "Background player count cannot be negative.");
+        }
+
+        if (config.BackgroundPlayerCount > 0 && config.BackgroundPlayerWager <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(config), config.BackgroundPlayerWager,
+                "Background player wager must be positive when background players are enabled.");
+        }
+
+        if (config.BackgroundPlayerCount > 0 && config.BackgroundPlayerWager < config.MinimumWager)
+        {
+            throw new ArgumentOutOfRangeException(nameof(config), config.BackgroundPlayerWager,
+                "Background player wager must be at least the table minimum.");
+        }
+    }
+
+    private static IBlackjackStrategy[] CreateBackgroundStrategies(SimulationConfig config)
+    {
+        return Enumerable.Range(0, config.BackgroundPlayerCount)
+            .Select(_ => (IBlackjackStrategy)new BasicStrategyBot(config.BackgroundPlayerWager, config.Rules))
+            .ToArray();
+    }
+
+    private static IReadOnlyList<SeatBet> CreateSeatBets(SimulationConfig config, SeatId mainSeatId, decimal bankroll, decimal wager)
+    {
+        var seatBets = new List<SeatBet>(config.BackgroundPlayerCount + (wager > 0m ? 1 : 0));
+
+        if (wager > 0m)
+        {
+            seatBets.Add(new SeatBet(mainSeatId, wager, bankroll));
+        }
+
+        for (var playerIndex = 0; playerIndex < config.BackgroundPlayerCount; playerIndex++)
+        {
+            var seatId = new SeatId(playerIndex + 2);
+            var backgroundBankroll = Math.Max(config.BackgroundPlayerWager * config.Rules.MaxHandsPerSeat * 2m, config.BackgroundPlayerWager * 10m);
+            seatBets.Add(new SeatBet(seatId, config.BackgroundPlayerWager, backgroundBankroll));
+        }
+
+        return seatBets;
+    }
+
+    private static IBlackjackStrategy ResolveSeatStrategy(
+        IBlackjackStrategy mainStrategy,
+        IReadOnlyList<IBlackjackStrategy> backgroundStrategies,
+        SeatId? activeSeatId,
+        SeatId mainSeatId)
+    {
+        if (activeSeatId is null || activeSeatId == mainSeatId)
+        {
+            return mainStrategy;
+        }
+
+        var backgroundIndex = activeSeatId.Value.Value - 2;
+        if (backgroundIndex < 0 || backgroundIndex >= backgroundStrategies.Count)
+        {
+            throw new InvalidOperationException($"No strategy is configured for background seat {activeSeatId.Value.Value}.");
+        }
+
+        return backgroundStrategies[backgroundIndex];
     }
 }

@@ -7,6 +7,8 @@ public sealed record SimulationConfig(
     decimal StartingBankroll,
     BlackjackRules Rules,
     decimal MinimumWager = 1m,
+    int BackgroundPlayerCount = 0,
+    decimal BackgroundPlayerWager = 1m,
     bool CaptureRoundRecords = false,
     int? RandomSeed = null,
     bool StopOnBankruptcy = true);
