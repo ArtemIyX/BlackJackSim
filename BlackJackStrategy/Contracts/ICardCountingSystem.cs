@@ -9,6 +9,8 @@ public interface ICardCountingSystem
 
     bool IsBalanced { get; }
 
+    bool UsesSideCounts { get; }
+
     void Reset();
 
     void ObserveCard(CardDef card);

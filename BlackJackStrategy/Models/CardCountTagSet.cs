@@ -3,18 +3,18 @@ using BlackJackData.Enums;
 namespace BlackJackStrategy.Models;
 
 public sealed record CardCountTagSet(
-    int Two,
-    int Three,
-    int Four,
-    int Five,
-    int Six,
-    int Seven,
-    int Eight,
-    int Nine,
-    int Ten,
-    int Ace)
+    double Two,
+    double Three,
+    double Four,
+    double Five,
+    double Six,
+    double Seven,
+    double Eight,
+    double Nine,
+    double Ten,
+    double Ace)
 {
-    public int GetTag(CardRank rank)
+    public double GetTag(CardRank rank)
     {
         return rank switch
         {

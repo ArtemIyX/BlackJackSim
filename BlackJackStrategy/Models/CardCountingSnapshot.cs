@@ -3,6 +3,8 @@ namespace BlackJackStrategy.Models;
 public sealed record CardCountingSnapshot(
     string SystemName,
     bool IsBalanced,
-    int RunningCount,
+    bool UsesSideCounts,
+    double RunningCount,
     double? TrueCount,
-    double DecksRemaining);
+    double DecksRemaining,
+    IReadOnlyDictionary<string, double> SideCounts);
