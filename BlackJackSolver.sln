@@ -12,6 +12,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlackJackStrategy", "BlackJ
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlackJackConsoleRunner", "BlackJackConsoleRunner\BlackJackConsoleRunner.csproj", "{A69B5D31-E33C-4C0B-BC18-195992E7ADFD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlackJackConsoleOptimizer", "BlackJackConsoleOptimizer\BlackJackConsoleOptimizer.csproj", "{A2A25209-E2FA-416B-9735-8621DDDF8580}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -42,5 +44,9 @@ Global
 		{A69B5D31-E33C-4C0B-BC18-195992E7ADFD}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A69B5D31-E33C-4C0B-BC18-195992E7ADFD}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A69B5D31-E33C-4C0B-BC18-195992E7ADFD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A2A25209-E2FA-416B-9735-8621DDDF8580}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A2A25209-E2FA-416B-9735-8621DDDF8580}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A2A25209-E2FA-416B-9735-8621DDDF8580}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A2A25209-E2FA-416B-9735-8621DDDF8580}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

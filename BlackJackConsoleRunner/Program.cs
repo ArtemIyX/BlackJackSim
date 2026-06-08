@@ -1,4 +1,6 @@
 using BlackJackData.Rules;
+using BlackJackStrategy.Betting;
+using BlackJackStrategy.Counting.Systems;
 using BlackJackStrategy.Models;
 using BlackJackStrategy.Simulation;
 using BlackJackStrategy.Strategies;
@@ -8,8 +10,8 @@ using BlackJackStrategy.Strategies;
 Console.WriteLine("Blackjack Strategy Runner");
 Console.WriteLine();
 
-var rounds = ReadInt("Rounds to simulate", 10000, min: 1);
-var startingBankroll = ReadDecimal("Starting bankroll", 1000m, min: 1m);
+var rounds = ReadInt("Rounds to simulate", 1_000_000, min: 1);
+var startingBankroll = ReadDecimal("Starting bankroll", 1_000_000m, min: 1m);
 var minimumWager = ReadDecimal("Minimum wager", 10m, min: 0.01m, max: startingBankroll);
 var strategyWager = ReadDecimal("Strategy wager", minimumWager, min: minimumWager, max: startingBankroll);
 var deckCount = ReadInt("Deck count", BlackjackRules.Default.DeckCount, min: 1);
@@ -38,8 +40,19 @@ Console.WriteLine();
 Console.WriteLine("Running simulation...");
 Console.WriteLine();
 
-var strategy = new BasicStrategyBot(strategyWager);
-var result = runner.Run(strategy, config);
+var playStrategy = new BasicStrategyBot(strategyWager, rules);
+
+var countingStrategy = new CountingStrategyBot(
+    new HiLoCountingSystem(),
+    new TrueCountStepBetRamp(
+    [
+        new BetRampStep(1d, 2m),
+        new BetRampStep(2d, 8m),
+        new BetRampStep(3d, 8m)
+    ]),
+    playStrategy,
+    unitSize: strategyWager);
+var result = runner.Run(countingStrategy, config);
 
 WriteSummary(result);
 
