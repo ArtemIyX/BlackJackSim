@@ -32,5 +32,5 @@ public sealed record BlackjackRules(
         AllowResplitAces: false,
         AllowHitSplitAces: false,
         MaxHandsPerSeat: 4,
-        ShoePenetration: 0.75d);
+        ShoePenetration: 0.5d);
 }
