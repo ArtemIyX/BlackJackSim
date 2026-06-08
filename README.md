@@ -11,6 +11,9 @@ A C#/.NET blackjack sandbox for:
 
 The solution is split into small projects so the domain, engine, strategies, and console apps can evolve independently.
 
+<img width="488" height="604" alt="stats" src="https://github.com/user-attachments/assets/66b0a887-648f-4ad1-a95e-027c61669794" />
+
+
 ## Disclaimer
 
 > This repository is for educational, research, and simulation purposes only.
