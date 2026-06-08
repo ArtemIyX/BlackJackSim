@@ -19,7 +19,7 @@ public sealed record BlackjackRules(
     double ShoePenetration)
 {
     public static BlackjackRules Default { get; } = new(
-        DeckCount: 6,
+        DeckCount: 8,
         BlackjackPayout: 1.5m,
         InsurancePayout: 2.0m,
         DealerHitRule: DealerHitRule.StandOnSoft17,
