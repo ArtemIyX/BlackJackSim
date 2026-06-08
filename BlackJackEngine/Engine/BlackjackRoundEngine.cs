@@ -286,6 +286,18 @@ public sealed class BlackjackRoundEngine : IBlackjackRoundEngine
 
     private static RoundState AdvanceAfterPlayerAction(RoundState state)
     {
+        if (state.ActiveSeatId is not null && state.ActiveHandId is not null)
+        {
+            var currentHand = GetActiveHand(state);
+            if (!currentHand.IsResolved)
+            {
+                return state with
+                {
+                    Phase = GamePhase.PlayerTurn
+                };
+            }
+        }
+
         if (TryGetNextActiveHand(state, out var nextSeatId, out var nextHandId))
         {
             return state with
