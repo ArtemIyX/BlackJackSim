@@ -61,6 +61,7 @@ public class BlackjackRoundEngineTests
         var state = _engine.StartRound(CreateDefaultOptions(), shoe);
 
         state.InsuranceOffered.Should().BeTrue();
+        state.Phase.Should().Be(GamePhase.InsuranceDecision);
     }
 
     [Fact]
@@ -77,7 +78,7 @@ public class BlackjackRoundEngineTests
             DealerPeeksForBlackjack = false
         }), shoe);
 
-        state.Phase.Should().Be(GamePhase.PlayerTurn);
+        state.Phase.Should().Be(GamePhase.InsuranceDecision);
         state.Dealer.IsBlackjack.Should().BeTrue();
         state.Dealer.HoleCardRevealed.Should().BeFalse();
     }
@@ -162,6 +163,22 @@ public class BlackjackRoundEngineTests
         state = _engine.ApplyPlayerAction(state, ActiveAction(state, PlayerActionType.Stand), shoe);
 
         _engine.GetLegalActions(state).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GetLegalActions_ShouldReturnInsuranceChoices_DuringInsuranceDecision()
+    {
+        var shoe = CreateShoe(
+            C(CardSuit.Spades, CardRank.Ten),
+            C(CardSuit.Hearts, CardRank.Ace),
+            C(CardSuit.Clubs, CardRank.Seven),
+            C(CardSuit.Diamonds, CardRank.Nine));
+
+        var state = _engine.StartRound(CreateDefaultOptions(), shoe);
+
+        var actions = _engine.GetLegalActions(state);
+
+        actions.Should().BeEquivalentTo([PlayerActionType.Insurance, PlayerActionType.DeclineInsurance]);
     }
 
     [Fact]
@@ -282,7 +299,7 @@ public class BlackjackRoundEngineTests
     {
         var options = new RoundStartOptions(
             new RoundId(1),
-            BlackjackRules.Default,
+            BlackjackRules.Default with { AllowInsurance = false },
             [
                 new SeatBet(new SeatId(1), 10m),
                 new SeatBet(new SeatId(2), 20m)
@@ -303,6 +320,58 @@ public class BlackjackRoundEngineTests
 
         state.Phase.Should().Be(GamePhase.PlayerTurn);
         state.ActiveSeatId.Should().Be(new SeatId(2));
+    }
+
+    [Fact]
+    public void ApplyPlayerAction_Insurance_ShouldMarkHandAndAdvanceToPlayerTurn()
+    {
+        var shoe = CreateShoe(
+            C(CardSuit.Spades, CardRank.Ten),
+            C(CardSuit.Hearts, CardRank.Ace),
+            C(CardSuit.Clubs, CardRank.Seven),
+            C(CardSuit.Diamonds, CardRank.Nine));
+
+        var state = _engine.StartRound(CreateDefaultOptions(), shoe);
+
+        state = _engine.ApplyPlayerAction(state, ActiveAction(state, PlayerActionType.Insurance), shoe);
+
+        state.Phase.Should().Be(GamePhase.PlayerTurn);
+        state.Seats[0].Hands[0].HasInsurance.Should().BeTrue();
+        state.Seats[0].Hands[0].InsuranceDecisionMade.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ApplyPlayerAction_DeclineInsurance_ShouldAdvanceAcrossSeatsBeforePlayerTurn()
+    {
+        var options = new RoundStartOptions(
+            new RoundId(1),
+            BlackjackRules.Default,
+            [
+                new SeatBet(new SeatId(1), 10m),
+                new SeatBet(new SeatId(2), 10m)
+            ]);
+
+        var shoe = CreateShoe(
+            C(CardSuit.Spades, CardRank.Ten),
+            C(CardSuit.Hearts, CardRank.Nine),
+            C(CardSuit.Clubs, CardRank.Ace),
+            C(CardSuit.Diamonds, CardRank.Seven),
+            C(CardSuit.Clubs, CardRank.Eight),
+            C(CardSuit.Hearts, CardRank.Nine));
+
+        var state = _engine.StartRound(options, shoe);
+
+        state.Phase.Should().Be(GamePhase.InsuranceDecision);
+        state.ActiveSeatId.Should().Be(new SeatId(1));
+
+        state = _engine.ApplyPlayerAction(state, ActiveAction(state, PlayerActionType.DeclineInsurance), shoe);
+        state.Phase.Should().Be(GamePhase.InsuranceDecision);
+        state.ActiveSeatId.Should().Be(new SeatId(2));
+
+        state = _engine.ApplyPlayerAction(state, ActiveAction(state, PlayerActionType.DeclineInsurance), shoe);
+        state.Phase.Should().Be(GamePhase.PlayerTurn);
+        state.ActiveSeatId.Should().Be(new SeatId(1));
+        state.Seats.All(seat => seat.Hands[0].InsuranceDecisionMade).Should().BeTrue();
     }
 
     [Fact]
@@ -327,6 +396,105 @@ public class BlackjackRoundEngineTests
     }
 
     [Fact]
+    public void ApplyPlayerAction_Split_ShouldCreateTwoPlayableHands_AndKeepFirstSplitHandActive()
+    {
+        var shoe = CreateShoe(
+            C(CardSuit.Spades, CardRank.Eight),
+            C(CardSuit.Hearts, CardRank.Six),
+            C(CardSuit.Clubs, CardRank.Eight),
+            C(CardSuit.Diamonds, CardRank.Nine),
+            C(CardSuit.Spades, CardRank.Three),
+            C(CardSuit.Hearts, CardRank.Four));
+
+        var state = _engine.StartRound(CreateDefaultOptions(), shoe);
+
+        _engine.GetLegalActions(state).Should().Contain(PlayerActionType.Split);
+
+        state = _engine.ApplyPlayerAction(state, ActiveAction(state, PlayerActionType.Split), shoe);
+
+        state.Phase.Should().Be(GamePhase.PlayerTurn);
+        state.Seats[0].Hands.Should().HaveCount(2);
+        state.ActiveHandId.Should().Be(state.Seats[0].Hands[0].Id);
+        state.Seats[0].Hands[0].Cards.Select(card => card.Rank).Should().Equal(CardRank.Eight, CardRank.Three);
+        state.Seats[0].Hands[1].Cards.Select(card => card.Rank).Should().Equal(CardRank.Eight, CardRank.Four);
+        state.Seats[0].Hands.Should().OnlyContain(hand => hand.IsSplitHand);
+    }
+
+    [Fact]
+    public void GetLegalActions_ShouldOmitDouble_AfterSplitWhenRuleDisallowsIt()
+    {
+        var shoe = CreateShoe(
+            C(CardSuit.Spades, CardRank.Eight),
+            C(CardSuit.Hearts, CardRank.Six),
+            C(CardSuit.Clubs, CardRank.Eight),
+            C(CardSuit.Diamonds, CardRank.Nine),
+            C(CardSuit.Spades, CardRank.Three),
+            C(CardSuit.Hearts, CardRank.Four));
+
+        var state = _engine.StartRound(CreateDefaultOptions(rules: BlackjackRules.Default with
+        {
+            AllowDoubleAfterSplit = false
+        }), shoe);
+
+        state = _engine.ApplyPlayerAction(state, ActiveAction(state, PlayerActionType.Split), shoe);
+
+        var actions = _engine.GetLegalActions(state);
+
+        actions.Should().Contain(PlayerActionType.Hit);
+        actions.Should().Contain(PlayerActionType.Stand);
+        actions.Should().NotContain(PlayerActionType.Double);
+        actions.Should().NotContain(PlayerActionType.Surrender);
+    }
+
+    [Fact]
+    public void ApplyPlayerAction_SplitAces_ShouldAutoResolveHands_WhenHitSplitAcesIsDisabled()
+    {
+        var shoe = CreateShoe(
+            C(CardSuit.Spades, CardRank.Ace),
+            C(CardSuit.Hearts, CardRank.Six),
+            C(CardSuit.Clubs, CardRank.Ace),
+            C(CardSuit.Diamonds, CardRank.Nine),
+            C(CardSuit.Spades, CardRank.Ten),
+            C(CardSuit.Hearts, CardRank.Five),
+            C(CardSuit.Clubs, CardRank.Two));
+
+        var state = _engine.StartRound(CreateDefaultOptions(rules: BlackjackRules.Default with
+        {
+            AllowHitSplitAces = false
+        }), shoe);
+
+        state = _engine.ApplyPlayerAction(state, ActiveAction(state, PlayerActionType.Split), shoe);
+
+        state.Phase.Should().Be(GamePhase.DealerTurn);
+        state.Seats[0].Hands.Should().HaveCount(2);
+        state.Seats[0].Hands.Should().OnlyContain(hand => hand.IsStanding);
+    }
+
+    [Fact]
+    public void ApplyPlayerAction_ShouldAllowResplitAces_WhenRuleAllowsIt()
+    {
+        var shoe = CreateShoe(
+            C(CardSuit.Spades, CardRank.Ace),
+            C(CardSuit.Hearts, CardRank.Six),
+            C(CardSuit.Clubs, CardRank.Ace),
+            C(CardSuit.Diamonds, CardRank.Nine),
+            C(CardSuit.Spades, CardRank.Ace),
+            C(CardSuit.Hearts, CardRank.Five),
+            C(CardSuit.Clubs, CardRank.Two),
+            C(CardSuit.Diamonds, CardRank.Three));
+
+        var state = _engine.StartRound(CreateDefaultOptions(rules: BlackjackRules.Default with
+        {
+            AllowHitSplitAces = true,
+            AllowResplitAces = true
+        }), shoe);
+
+        state = _engine.ApplyPlayerAction(state, ActiveAction(state, PlayerActionType.Split), shoe);
+
+        _engine.GetLegalActions(state).Should().Contain(PlayerActionType.Split);
+    }
+
+    [Fact]
     public void ApplyPlayerAction_ShouldThrow_WhenRoundIsNotInPlayerTurn()
     {
         var shoe = CreateShoe(
@@ -344,7 +512,7 @@ public class BlackjackRoundEngineTests
             shoe);
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*player turn*");
+            .WithMessage("*player turn or insurance decision*");
     }
 
     [Fact]
@@ -397,7 +565,8 @@ public class BlackjackRoundEngineTests
         var state = _engine.StartRound(CreateDefaultOptions(rules: BlackjackRules.Default with
         {
             DealerHitRule = hitRule,
-            SurrenderRule = SurrenderRule.None
+            SurrenderRule = SurrenderRule.None,
+            AllowInsurance = false
         }), shoe);
 
         state = _engine.ApplyPlayerAction(state, ActiveAction(state, PlayerActionType.Stand), shoe);
@@ -461,6 +630,30 @@ public class BlackjackRoundEngineTests
         var result = _engine.ResolveRound(state);
 
         result.Seats[0].Hands[0].Outcome.Should().Be(HandOutcomeType.Push);
+        result.Seats[0].Hands[0].NetPayout.Should().Be(0m);
+    }
+
+    [Fact]
+    public void ResolveRound_ShouldApplyInsurancePayout_WhenDealerBlackjackAppearsOnNoPeekTable()
+    {
+        var shoe = CreateShoe(
+            C(CardSuit.Spades, CardRank.Ten),
+            C(CardSuit.Hearts, CardRank.Ace),
+            C(CardSuit.Clubs, CardRank.Nine),
+            C(CardSuit.Diamonds, CardRank.King));
+
+        var state = _engine.StartRound(CreateDefaultOptions(rules: BlackjackRules.Default with
+        {
+            DealerPeeksForBlackjack = false
+        }, wager: 10m), shoe);
+
+        state = _engine.ApplyPlayerAction(state, ActiveAction(state, PlayerActionType.Insurance), shoe);
+        state = _engine.ApplyPlayerAction(state, ActiveAction(state, PlayerActionType.Stand), shoe);
+
+        var result = _engine.ResolveRound(state);
+
+        result.Seats[0].Hands[0].UsedInsurance.Should().BeTrue();
+        result.Seats[0].Hands[0].Outcome.Should().Be(HandOutcomeType.Lose);
         result.Seats[0].Hands[0].NetPayout.Should().Be(0m);
     }
 

@@ -50,12 +50,27 @@ public sealed class BlackjackRoundEngine : IBlackjackRoundEngine
     {
         ArgumentNullException.ThrowIfNull(state);
 
-        if (state.Phase != GamePhase.PlayerTurn || state.ActiveSeatId is null || state.ActiveHandId is null)
+        if (state.ActiveSeatId is null || state.ActiveHandId is null)
+        {
+            return Array.Empty<PlayerActionType>();
+        }
+
+        if (state.Phase == GamePhase.InsuranceDecision)
+        {
+            return
+            [
+                PlayerActionType.Insurance,
+                PlayerActionType.DeclineInsurance
+            ];
+        }
+
+        if (state.Phase != GamePhase.PlayerTurn)
         {
             return Array.Empty<PlayerActionType>();
         }
 
         var hand = GetActiveHand(state);
+        var seat = GetActiveSeat(state);
         if (!hand.CanReceiveCards || hand.IsBlackjack)
         {
             return Array.Empty<PlayerActionType>();
@@ -72,6 +87,11 @@ public sealed class BlackjackRoundEngine : IBlackjackRoundEngine
             actions.Add(PlayerActionType.Double);
         }
 
+        if (CanSplit(seat, hand, state.Rules))
+        {
+            actions.Add(PlayerActionType.Split);
+        }
+
         if (CanSurrender(hand, state.Rules))
         {
             actions.Add(PlayerActionType.Surrender);
@@ -85,9 +105,10 @@ public sealed class BlackjackRoundEngine : IBlackjackRoundEngine
         ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(shoe);
 
-        if (state.Phase != GamePhase.PlayerTurn)
+        if (state.Phase != GamePhase.PlayerTurn && state.Phase != GamePhase.InsuranceDecision)
         {
-            throw new InvalidOperationException("Player actions can only be applied during the player turn phase.");
+            throw new InvalidOperationException(
+                "Player actions can only be applied during the player turn or insurance decision phases.");
         }
 
         if (state.ActiveSeatId != action.SeatId || state.ActiveHandId != action.HandId)
@@ -100,7 +121,27 @@ public sealed class BlackjackRoundEngine : IBlackjackRoundEngine
             throw new InvalidOperationException($"Action '{action.ActionType}' is not legal for the current hand.");
         }
 
+        if (state.Phase == GamePhase.InsuranceDecision)
+        {
+            var insuranceHand = GetActiveHand(state);
+            var insuranceUpdatedHand = action.ActionType == PlayerActionType.Insurance
+                ? insuranceHand with { HasInsurance = true, InsuranceDecisionMade = true }
+                : insuranceHand with { InsuranceDecisionMade = true };
+
+            var insuranceState = ReplaceHand(state, action.SeatId, insuranceUpdatedHand) with
+            {
+                ShoeCardsRemaining = shoe.CardsRemaining
+            };
+
+            return AdvanceAfterInsuranceDecision(insuranceState);
+        }
+
         var activeHand = GetActiveHand(state);
+        if (action.ActionType == PlayerActionType.Split)
+        {
+            return ApplySplit(state, action.SeatId, activeHand, shoe);
+        }
+
         var updatedHand = action.ActionType switch
         {
             PlayerActionType.Hit => ApplyHit(activeHand, shoe),
@@ -151,7 +192,8 @@ public sealed class BlackjackRoundEngine : IBlackjackRoundEngine
 
         if (state.Phase != GamePhase.Payout && state.Phase != GamePhase.Completed)
         {
-            throw new InvalidOperationException("The round must be in payout or completed phase before it can be resolved.");
+            throw new InvalidOperationException(
+                "The round must be in payout or completed phase before it can be resolved.");
         }
 
         var dealerValue = state.Dealer.Value;
@@ -217,6 +259,18 @@ public sealed class BlackjackRoundEngine : IBlackjackRoundEngine
             };
         }
 
+        if (insuranceOffered && TryGetNextInsuranceSeat(state, out var insuranceSeatId, out var insuranceHandId))
+        {
+            return state with
+            {
+                Phase = GamePhase.InsuranceDecision,
+                InsuranceOffered = true,
+                ActiveSeatId = insuranceSeatId,
+                ActiveHandId = insuranceHandId,
+                ShoeCardsRemaining = shoe.CardsRemaining
+            };
+        }
+
         if (TryGetNextActiveHand(state, out var activeSeatId, out var activeHandId))
         {
             return state with
@@ -265,6 +319,31 @@ public sealed class BlackjackRoundEngine : IBlackjackRoundEngine
         return rules.SurrenderRule != SurrenderRule.None && hand.Cards.Count == 2 && !hand.IsSplitHand;
     }
 
+    private static bool CanSplit(SeatState seat, HandState hand, BlackjackRules rules)
+    {
+        if (hand.Cards.Count != 2 || seat.Hands.Count >= rules.MaxHandsPerSeat)
+        {
+            return false;
+        }
+
+        if (hand.Cards[0].Rank != hand.Cards[1].Rank)
+        {
+            return false;
+        }
+
+        if (hand.IsSplitHand)
+        {
+            if (hand.Cards[0].Rank == CardRank.Ace)
+            {
+                return rules.AllowResplitAces;
+            }
+
+            return rules.AllowResplitHands;
+        }
+
+        return true;
+    }
+
     private static HandState ApplyHit(HandState hand, IBlackjackShoe shoe)
     {
         var updatedHand = hand with { Cards = AppendCard(hand.Cards, shoe.Draw()) };
@@ -281,6 +360,95 @@ public sealed class BlackjackRoundEngine : IBlackjackRoundEngine
             IsDoubledDown = true,
             IsStanding = true,
             Cards = AppendCard(hand.Cards, shoe.Draw())
+        };
+    }
+
+    private static RoundState ApplySplit(RoundState state, SeatId seatId, HandState hand, IBlackjackShoe shoe)
+    {
+        var nextHandIdValue = state.Seats
+            .SelectMany(seat => seat.Hands)
+            .Select(existingHand => existingHand.Id.Value)
+            .DefaultIfEmpty(0)
+            .Max() + 1;
+
+        var isAceSplit = hand.Cards[0].Rank == CardRank.Ace;
+        var replacementOne = shoe.Draw();
+        var replacementTwo = shoe.Draw();
+        var splitDepth = hand.SplitDepth + 1;
+        var resolveSplitAcesImmediately = isAceSplit && !state.Rules.AllowHitSplitAces;
+
+        var firstHand = new HandState(
+            hand.Id,
+            hand.Wager,
+            [hand.Cards[0], replacementOne],
+            IsStanding: resolveSplitAcesImmediately,
+            IsDoubledDown: false,
+            IsSurrendered: false,
+            IsSplitHand: true,
+            HasInsurance: hand.HasInsurance,
+            InsuranceDecisionMade: hand.InsuranceDecisionMade,
+            SplitDepth: splitDepth);
+
+        var secondHand = new HandState(
+            new HandId(nextHandIdValue),
+            hand.Wager,
+            [hand.Cards[1], replacementTwo],
+            IsStanding: resolveSplitAcesImmediately,
+            IsDoubledDown: false,
+            IsSurrendered: false,
+            IsSplitHand: true,
+            HasInsurance: false,
+            InsuranceDecisionMade: hand.InsuranceDecisionMade,
+            SplitDepth: splitDepth);
+
+        var updatedSeats = state.Seats
+            .Select(seat => seat.Id != seatId
+                ? seat
+                : seat with
+                {
+                    Hands = ReplaceHandWithSplitHands(seat.Hands, hand.Id, firstHand, secondHand)
+                })
+            .ToArray();
+
+        var splitState = state with
+        {
+            Seats = updatedSeats,
+            ActiveSeatId = seatId,
+            ActiveHandId = firstHand.Id,
+            ShoeCardsRemaining = shoe.CardsRemaining
+        };
+
+        return AdvanceAfterPlayerAction(splitState);
+    }
+
+    private static RoundState AdvanceAfterInsuranceDecision(RoundState state)
+    {
+        if (TryGetNextInsuranceSeat(state, out var nextSeatId, out var nextHandId))
+        {
+            return state with
+            {
+                Phase = GamePhase.InsuranceDecision,
+                ActiveSeatId = nextSeatId,
+                ActiveHandId = nextHandId
+            };
+        }
+
+        if (TryGetNextActiveHand(state with { ActiveSeatId = null, ActiveHandId = null }, out var activeSeatId,
+                out var activeHandId))
+        {
+            return state with
+            {
+                Phase = GamePhase.PlayerTurn,
+                ActiveSeatId = activeSeatId,
+                ActiveHandId = activeHandId
+            };
+        }
+
+        return state with
+        {
+            Phase = ShouldDealerPlay(state) ? GamePhase.DealerTurn : GamePhase.Payout,
+            ActiveSeatId = null,
+            ActiveHandId = null
         };
     }
 
@@ -314,6 +482,41 @@ public sealed class BlackjackRoundEngine : IBlackjackRoundEngine
             ActiveSeatId = null,
             ActiveHandId = null
         };
+    }
+
+    private static bool TryGetNextInsuranceSeat(RoundState state, out SeatId? seatId, out HandId? handId)
+    {
+        var beginSearching = state.ActiveSeatId is null || state.ActiveHandId is null;
+
+        foreach (var seat in state.Seats.Where(seat => seat.IsParticipating))
+        {
+            var hand = seat.Hands.FirstOrDefault();
+            if (hand is null)
+            {
+                continue;
+            }
+
+            if (!beginSearching)
+            {
+                if (seat.Id == state.ActiveSeatId && hand.Id == state.ActiveHandId)
+                {
+                    beginSearching = true;
+                }
+
+                continue;
+            }
+
+            if (!hand.InsuranceDecisionMade)
+            {
+                seatId = seat.Id;
+                handId = hand.Id;
+                return true;
+            }
+        }
+
+        seatId = null;
+        handId = null;
+        return false;
     }
 
     private static bool TryGetNextActiveHand(RoundState state, out SeatId? seatId, out HandId? handId)
@@ -388,6 +591,12 @@ public sealed class BlackjackRoundEngine : IBlackjackRoundEngine
         return card.Value.Rank is CardRank.Ace or CardRank.Ten or CardRank.Jack or CardRank.Queen or CardRank.King;
     }
 
+    private static SeatState GetActiveSeat(RoundState state)
+    {
+        return state.Seats.FirstOrDefault(seat => seat.Id == state.ActiveSeatId)
+               ?? throw new InvalidOperationException("The active seat was not found in the round state.");
+    }
+
     private static RoundState ReplaceHand(RoundState state, SeatId seatId, HandState updatedHand)
     {
         return state with
@@ -405,6 +614,29 @@ public sealed class BlackjackRoundEngine : IBlackjackRoundEngine
         };
     }
 
+    private static HandState[] ReplaceHandWithSplitHands(
+        IReadOnlyList<HandState> hands,
+        HandId handId,
+        HandState firstHand,
+        HandState secondHand)
+    {
+        var updatedHands = new List<HandState>(hands.Count + 1);
+
+        foreach (var hand in hands)
+        {
+            if (hand.Id == handId)
+            {
+                updatedHands.Add(firstHand);
+                updatedHands.Add(secondHand);
+                continue;
+            }
+
+            updatedHands.Add(hand);
+        }
+
+        return updatedHands.ToArray();
+    }
+
     private static RoundState DealCardToSeatHand(RoundState state, SeatId seatId, HandId handId, CardDef card)
     {
         return state with
@@ -415,7 +647,8 @@ public sealed class BlackjackRoundEngine : IBlackjackRoundEngine
                     : seat with
                     {
                         Hands = seat.Hands
-                            .Select(hand => hand.Id != handId ? hand : hand with { Cards = AppendCard(hand.Cards, card) })
+                            .Select(hand =>
+                                hand.Id != handId ? hand : hand with { Cards = AppendCard(hand.Cards, card) })
                             .ToArray()
                     })
                 .ToArray()
@@ -452,44 +685,53 @@ public sealed class BlackjackRoundEngine : IBlackjackRoundEngine
 
         if (hand.IsSurrendered)
         {
-            return new HandResult(seatId, hand.Id, HandOutcomeType.Surrender, hand.Wager, insuranceNet - (hand.Wager / 2m), playerValue, dealerValue, hand.HasInsurance);
+            return new HandResult(seatId, hand.Id, HandOutcomeType.Surrender, hand.Wager,
+                insuranceNet - (hand.Wager / 2m), playerValue, dealerValue, hand.HasInsurance);
         }
 
         if (playerValue.IsBust)
         {
-            return new HandResult(seatId, hand.Id, HandOutcomeType.Lose, hand.Wager, insuranceNet - hand.Wager, playerValue, dealerValue, hand.HasInsurance);
+            return new HandResult(seatId, hand.Id, HandOutcomeType.Lose, hand.Wager, insuranceNet - hand.Wager,
+                playerValue, dealerValue, hand.HasInsurance);
         }
 
         if (playerValue.IsBlackjack && dealerValue.IsBlackjack)
         {
-            return new HandResult(seatId, hand.Id, HandOutcomeType.Push, hand.Wager, insuranceNet, playerValue, dealerValue, hand.HasInsurance);
+            return new HandResult(seatId, hand.Id, HandOutcomeType.Push, hand.Wager, insuranceNet, playerValue,
+                dealerValue, hand.HasInsurance);
         }
 
         if (playerValue.IsBlackjack)
         {
-            return new HandResult(seatId, hand.Id, HandOutcomeType.Blackjack, hand.Wager, insuranceNet + (hand.Wager * rules.BlackjackPayout), playerValue, dealerValue, hand.HasInsurance);
+            return new HandResult(seatId, hand.Id, HandOutcomeType.Blackjack, hand.Wager,
+                insuranceNet + (hand.Wager * rules.BlackjackPayout), playerValue, dealerValue, hand.HasInsurance);
         }
 
         if (dealerValue.IsBlackjack)
         {
-            return new HandResult(seatId, hand.Id, HandOutcomeType.Lose, hand.Wager, insuranceNet - hand.Wager, playerValue, dealerValue, hand.HasInsurance);
+            return new HandResult(seatId, hand.Id, HandOutcomeType.Lose, hand.Wager, insuranceNet - hand.Wager,
+                playerValue, dealerValue, hand.HasInsurance);
         }
 
         if (dealerValue.IsBust)
         {
-            return new HandResult(seatId, hand.Id, HandOutcomeType.Win, hand.Wager, insuranceNet + hand.Wager, playerValue, dealerValue, hand.HasInsurance);
+            return new HandResult(seatId, hand.Id, HandOutcomeType.Win, hand.Wager, insuranceNet + hand.Wager,
+                playerValue, dealerValue, hand.HasInsurance);
         }
 
         if (playerValue.BestTotal > dealerValue.BestTotal)
         {
-            return new HandResult(seatId, hand.Id, HandOutcomeType.Win, hand.Wager, insuranceNet + hand.Wager, playerValue, dealerValue, hand.HasInsurance);
+            return new HandResult(seatId, hand.Id, HandOutcomeType.Win, hand.Wager, insuranceNet + hand.Wager,
+                playerValue, dealerValue, hand.HasInsurance);
         }
 
         if (playerValue.BestTotal < dealerValue.BestTotal)
         {
-            return new HandResult(seatId, hand.Id, HandOutcomeType.Lose, hand.Wager, insuranceNet - hand.Wager, playerValue, dealerValue, hand.HasInsurance);
+            return new HandResult(seatId, hand.Id, HandOutcomeType.Lose, hand.Wager, insuranceNet - hand.Wager,
+                playerValue, dealerValue, hand.HasInsurance);
         }
 
-        return new HandResult(seatId, hand.Id, HandOutcomeType.Push, hand.Wager, insuranceNet, playerValue, dealerValue, hand.HasInsurance);
+        return new HandResult(seatId, hand.Id, HandOutcomeType.Push, hand.Wager, insuranceNet, playerValue, dealerValue,
+            hand.HasInsurance);
     }
 }

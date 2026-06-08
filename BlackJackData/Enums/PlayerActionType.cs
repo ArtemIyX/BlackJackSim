@@ -9,5 +9,6 @@ public enum PlayerActionType : byte
     Double = 4,
     Split = 5,
     Surrender = 6,
-    Insurance = 7
+    Insurance = 7,
+    DeclineInsurance = 8
 }

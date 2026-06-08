@@ -12,6 +12,7 @@ public sealed record HandState(
     bool IsSurrendered = false,
     bool IsSplitHand = false,
     bool HasInsurance = false,
+    bool InsuranceDecisionMade = false,
     int SplitDepth = 0)
 {
     public HandValue Value => HandValue.FromCards(Cards);
