@@ -208,7 +208,7 @@ public sealed class BlackjackRoundEngine : IBlackjackRoundEngine
             })
             .ToArray();
 
-        return new RoundResult(state.Id, seatResults, dealerValue);
+        return new RoundResult(state.Id, seatResults, state.Dealer.Cards.ToArray(), dealerValue);
     }
 
     private static RoundState DealInitialCards(RoundState state, IBlackjackShoe shoe)
@@ -686,52 +686,52 @@ public sealed class BlackjackRoundEngine : IBlackjackRoundEngine
         if (hand.IsSurrendered)
         {
             return new HandResult(seatId, hand.Id, HandOutcomeType.Surrender, hand.Wager,
-                insuranceNet - (hand.Wager / 2m), playerValue, dealerValue, hand.HasInsurance);
+                insuranceNet - (hand.Wager / 2m), hand.Cards.ToArray(), playerValue, Array.Empty<CardDef>(), dealerValue, hand.HasInsurance);
         }
 
         if (playerValue.IsBust)
         {
             return new HandResult(seatId, hand.Id, HandOutcomeType.Lose, hand.Wager, insuranceNet - hand.Wager,
-                playerValue, dealerValue, hand.HasInsurance);
+                hand.Cards.ToArray(), playerValue, Array.Empty<CardDef>(), dealerValue, hand.HasInsurance);
         }
 
         if (playerValue.IsBlackjack && dealerValue.IsBlackjack)
         {
-            return new HandResult(seatId, hand.Id, HandOutcomeType.Push, hand.Wager, insuranceNet, playerValue,
-                dealerValue, hand.HasInsurance);
+            return new HandResult(seatId, hand.Id, HandOutcomeType.Push, hand.Wager, insuranceNet,
+                hand.Cards.ToArray(), playerValue, Array.Empty<CardDef>(), dealerValue, hand.HasInsurance);
         }
 
         if (playerValue.IsBlackjack)
         {
             return new HandResult(seatId, hand.Id, HandOutcomeType.Blackjack, hand.Wager,
-                insuranceNet + (hand.Wager * rules.BlackjackPayout), playerValue, dealerValue, hand.HasInsurance);
+                insuranceNet + (hand.Wager * rules.BlackjackPayout), hand.Cards.ToArray(), playerValue, Array.Empty<CardDef>(), dealerValue, hand.HasInsurance);
         }
 
         if (dealerValue.IsBlackjack)
         {
             return new HandResult(seatId, hand.Id, HandOutcomeType.Lose, hand.Wager, insuranceNet - hand.Wager,
-                playerValue, dealerValue, hand.HasInsurance);
+                hand.Cards.ToArray(), playerValue, Array.Empty<CardDef>(), dealerValue, hand.HasInsurance);
         }
 
         if (dealerValue.IsBust)
         {
             return new HandResult(seatId, hand.Id, HandOutcomeType.Win, hand.Wager, insuranceNet + hand.Wager,
-                playerValue, dealerValue, hand.HasInsurance);
+                hand.Cards.ToArray(), playerValue, Array.Empty<CardDef>(), dealerValue, hand.HasInsurance);
         }
 
         if (playerValue.BestTotal > dealerValue.BestTotal)
         {
             return new HandResult(seatId, hand.Id, HandOutcomeType.Win, hand.Wager, insuranceNet + hand.Wager,
-                playerValue, dealerValue, hand.HasInsurance);
+                hand.Cards.ToArray(), playerValue, Array.Empty<CardDef>(), dealerValue, hand.HasInsurance);
         }
 
         if (playerValue.BestTotal < dealerValue.BestTotal)
         {
             return new HandResult(seatId, hand.Id, HandOutcomeType.Lose, hand.Wager, insuranceNet - hand.Wager,
-                playerValue, dealerValue, hand.HasInsurance);
+                hand.Cards.ToArray(), playerValue, Array.Empty<CardDef>(), dealerValue, hand.HasInsurance);
         }
 
-        return new HandResult(seatId, hand.Id, HandOutcomeType.Push, hand.Wager, insuranceNet, playerValue, dealerValue,
+        return new HandResult(seatId, hand.Id, HandOutcomeType.Push, hand.Wager, insuranceNet, hand.Cards.ToArray(), playerValue, Array.Empty<CardDef>(), dealerValue,
             hand.HasInsurance);
     }
 }

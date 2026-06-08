@@ -10,4 +10,5 @@ public sealed record StrategyWagerContext(
     int CardsRemaining,
     int TotalCards,
     int CutCardCardsRemaining,
-    bool LastRoundUsedFreshShoe);
+    bool LastRoundUsedFreshShoe,
+    CardCountingSnapshot? CountSnapshot = null);

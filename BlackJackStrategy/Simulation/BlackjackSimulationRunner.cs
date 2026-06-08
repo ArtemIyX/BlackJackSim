@@ -7,6 +7,7 @@ using BlackJackEngine.Models;
 using BlackJackEngine.Shoe;
 using BlackJackStrategy.Contracts;
 using BlackJackStrategy.Models;
+using BlackJackStrategy.Strategies;
 
 namespace BlackJackStrategy.Simulation;
 
@@ -75,7 +76,10 @@ public sealed class BlackjackSimulationRunner
                 shoe.CardsRemaining,
                 shoe.TotalCards,
                 shoe.CutCardCardsRemaining,
-                shoe.LastRoundUsedFreshShoe);
+                shoe.LastRoundUsedFreshShoe,
+                strategy is CountingStrategyBot countingBot
+                    ? countingBot.GetCurrentCountSnapshot((double)shoe.CardsRemaining / 52d)
+                    : null);
 
             var wager = strategy.GetWager(wagerContext);
             if (wager <= 0m)
